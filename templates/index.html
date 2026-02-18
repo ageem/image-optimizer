@@ -5,16 +5,22 @@
   <title>Image Optimizer</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 </head>
 <body>
 <div class="shell">
 
   <!-- Topbar -->
   <header class="topbar">
-    <div class="topbar-logo">Image<span>/</span>Optimizer</div>
+    <div class="topbar-logo">
+      <i data-lucide="image" class="logo-icon"></i>
+      Image<span>/</span>Optimizer
+    </div>
     <div class="topbar-sep"></div>
     <div class="topbar-status" id="topbar-status">No folder loaded</div>
-    <button class="btn btn-ghost btn-sm" id="theme-btn" title="Toggle light/dark mode">☀</button>
+    <button class="btn btn-ghost btn-sm" id="theme-btn" title="Toggle light/dark mode">
+      <i data-lucide="sun" id="theme-icon"></i>
+    </button>
   </header>
 
   <!-- Sidebar -->
@@ -31,7 +37,7 @@
       </div>
       <div class="path-row">
         <input type="text" id="folder-path" placeholder="C:\Users\you\images" />
-        <button class="btn btn-ghost btn-sm" id="browse-btn" title="Browse for folder">&#128193;</button>
+        <button class="btn btn-ghost btn-sm" id="browse-btn" title="Browse for folder"><i data-lucide="folder-open"></i></button>
         <button class="btn btn-ghost btn-sm" id="load-btn">Load</button>
       </div>
       <label class="recurse-row">
@@ -193,6 +199,7 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="{{ url_for('static', filename='script.js') }}"></script>
+<script src="{{ url_for('static', filename='script.js') }}?v={{ range(1,99999)|random }}"></script>
+<script>lucide.createIcons();</script>
 </body>
 </html>

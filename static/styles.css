@@ -34,10 +34,16 @@
       border-bottom: 1px solid var(--border);
       background: var(--surface);
     }
-    .topbar-logo { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--accent); }
+    .topbar-logo {
+      font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--accent);
+      display: flex; align-items: center; gap: 7px;
+    }
     .topbar-logo span { color: var(--text2); }
+    .logo-icon { width: 16px; height: 16px; stroke: var(--accent); flex-shrink: 0; }
     .topbar-sep { flex: 1; }
     .topbar-status { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+    #theme-btn { width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; }
+    #theme-btn svg { width: 15px; height: 15px; }
 
     /* ── Sidebar ── */
     .sidebar {

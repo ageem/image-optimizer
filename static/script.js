@@ -1,3 +1,4 @@
+  document.addEventListener('DOMContentLoaded', () => {
   // ── State ──
   let images      = [];
   let overrides   = {};  // path → {width,quality,format,skip,no_path}
@@ -44,12 +45,21 @@
   const zipBtn        = document.getElementById('zip-btn');
 
   // ── Theme toggle ──
+  function setThemeIcon(isLight) {
+    const icon = document.getElementById('theme-icon');
+    if (!icon) return;
+    icon.setAttribute('data-lucide', isLight ? 'moon' : 'sun');
+    lucide.createIcons();
+  }
   const savedTheme = localStorage.getItem('theme') || 'dark';
-  if (savedTheme === 'light') { document.documentElement.setAttribute('data-theme', 'light'); themeBtn.textContent = ''; }
+  if (savedTheme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    setThemeIcon(true);
+  }
   themeBtn.addEventListener('click', () => {
     const isLight = document.documentElement.getAttribute('data-theme') === 'light';
     document.documentElement.setAttribute('data-theme', isLight ? 'dark' : 'light');
-    themeBtn.textContent = isLight ? '' : '';
+    setThemeIcon(!isLight);
     localStorage.setItem('theme', isLight ? 'dark' : 'light');
   });
 
@@ -535,6 +545,18 @@
     updateToolbar();
   }
 
+  imageGrid.addEventListener('click', e => {
+    const btn = e.target.closest('.card-remove');
+    if (!btn) return;
+    const path = btn.dataset.path;
+    if (path) removeImage(path);
+  });
+
+  function updateToolbar() {
+    const active = images.filter(i => !overrides[i.path]?.skip).length;
+    toolbarCount.textContent = `${active} of ${images.length} images selected for conversion`;
+  }
+
   function cardId(path) {
     return 'c_' + btoa(encodeURIComponent(path)).replace(/[^a-zA-Z0-9]/g, '_');
   }
@@ -554,7 +576,7 @@
     return `
     <div class="img-card ${ov.skip ? 'is-skipped' : ''}" id="${id}">
       ${thumb}
-      <button class="card-remove" onclick="removeImage('${img.path.replace(/'/g,"\\'")}')" title="Remove from batch">✕</button>
+      <button class="card-remove" data-path="${img.path.replace(/"/g,'&quot;')}" title="Remove from batch">✕</button>
       <div class="card-body">
         <div class="card-name" title="${img.name}">${img.name}</div>
         <div class="card-meta">${img.width} × ${img.height}px · ${img.size_kb} KB · ${img.format}</div>
@@ -618,3 +640,5 @@
   }
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+}); // DOMContentLoaded
