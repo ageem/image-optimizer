@@ -554,7 +554,7 @@
     return `
     <div class="img-card ${ov.skip ? 'is-skipped' : ''}" id="${id}">
       ${thumb}
-      <button class="card-remove" onclick="removeImage('${img.path.replace(/'/g,"\\'")}\')" title="Remove from batch">✕</button>
+      <button class="card-remove" onclick="removeImage('${img.path.replace(/'/g,"\\'")}')" title="Remove from batch">✕</button>
       <div class="card-body">
         <div class="card-name" title="${img.name}">${img.name}</div>
         <div class="card-meta">${img.width} × ${img.height}px · ${img.size_kb} KB · ${img.format}</div>
