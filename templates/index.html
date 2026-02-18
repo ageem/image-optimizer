@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Image Optimizer</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+<div class="shell">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-logo">Image<span>/</span>Optimizer</div>
+    <div class="topbar-sep"></div>
+    <div class="topbar-status" id="topbar-status">No folder loaded</div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+
+    <div class="sidebar-section">
+      <div class="section-label">Source</div>
+      <input type="file" id="file-input" multiple accept="image/jpeg,image/png,image/gif,image/bmp,image/tiff,image/webp" style="display:none" />
+      <div class="drop-zone" id="drop-zone">
+        <span class="dz-icon">📂</span>
+        <div class="dz-text">Drag images here from Explorer</div>
+        <div class="dz-sub">or click to browse files</div>
+        <div class="dz-sub" style="margin-top:4px;color:var(--text3)">Tip: paste folder path below for best results</div>
+      </div>
+      <div class="path-row">
+        <input type="text" id="folder-path" placeholder="C:\Users\you\images" />
+        <button class="btn btn-ghost btn-sm" id="browse-btn" title="Browse for folder">&#128193;</button>
+        <button class="btn btn-ghost btn-sm" id="load-btn">Load</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">Global Defaults</div>
+
+      <div class="field-row">
+        <div class="field-label"><strong>Width</strong><span id="lbl-width">720 px</span></div>
+        <div class="input-group">
+          <input type="number" id="g-width" value="720" min="1" max="9999" />
+          <span class="input-suffix">px · ratio locked</span>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field-label"><strong>Quality</strong><span id="lbl-quality">85%</span></div>
+        <input type="range" id="g-quality" min="10" max="100" value="85" />
+      </div>
+
+      <div class="field-row" style="margin-bottom:0">
+        <div class="field-label"><strong>Format</strong></div>
+        <select id="g-format">
+          <option value="original">Keep original</option>
+          <option value="webp">Convert to WebP</option>
+          <option value="jpg">Convert to JPG</option>
+          <option value="png">Convert to PNG</option>
+        </select>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- Overwrite toggle -->
+      <div class="overwrite-row">
+        <div class="overwrite-label">
+          Overwrite originals
+          <small>Replaces source files directly</small>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="g-overwrite" />
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+
+      <div id="suffix-row" class="field-row">
+        <div class="field-label"><strong>Filename Suffix</strong></div>
+        <input type="text" id="g-suffix" class="ti" value="-optimized" />
+      </div>
+
+      <div class="field-row" style="margin-bottom:0">
+        <div class="field-label"><strong>Output Folder</strong><span style="font-size:10px;color:var(--text3)">(blank = source)</span></div>
+        <input type="text" id="g-outfolder" class="ti" placeholder="Leave blank for source folder" />
+      </div>
+
+      <button class="btn btn-ghost btn-sm" id="apply-all-btn" style="margin-top:10px">↺ Apply to all images</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">Run</div>
+      <button class="btn btn-primary btn-full" id="convert-btn" disabled>▶ Convert Selected</button>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="sel-all-btn"   disabled>Select All</button>
+        <button class="btn btn-ghost btn-sm" id="desel-all-btn" disabled>Deselect All</button>
+        <button class="btn btn-danger btn-sm" id="clear-btn"    disabled>Clear All</button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="toolbar" id="toolbar" style="display:none">
+      <span class="toolbar-info" id="toolbar-count"></span>
+      <div class="toolbar-sep"></div>
+      <button class="btn btn-ghost btn-sm" id="expand-all-btn">Expand All</button>
+      <button class="btn btn-ghost btn-sm" id="collapse-all-btn">Collapse All</button>
+    </div>
+
+    <div class="grid-wrap" id="grid-wrap">
+      <div class="empty" id="empty-state">
+        <div class="empty-icon">🖼️</div>
+        <div class="empty-title">No images loaded</div>
+        <div class="empty-sub">Drag image files from Windows Explorer onto the sidebar, click the drop zone to browse, or paste a folder path and click Load.</div>
+      </div>
+      <div class="image-grid" id="image-grid" style="display:none"></div>
+    </div>
+
+    <div class="results-bar" id="results-bar" style="display:none">
+      <div class="rstat rstat-ok">✓ <strong id="r-ok">0</strong> converted</div>
+      <div class="rstat rstat-skip">— <strong id="r-skip">0</strong> skipped</div>
+      <div class="rstat rstat-err">✕ <strong id="r-err">0</strong> errors</div>
+      <div class="toolbar-sep"></div>
+      <span id="r-msg" style="font-size:12px;color:var(--text2)"></span>
+    </div>
+  </main>
+</div>
+
+<!-- Progress -->
+<div class="prog-overlay" id="prog-overlay">
+  <div class="prog-box">
+    <div class="prog-title">Converting…</div>
+    <div class="prog-sub" id="prog-sub">Processing images</div>
+    <div class="prog-track"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
