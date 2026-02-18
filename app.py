@@ -1,6 +1,7 @@
 import os
 import io
 import glob
+import zipfile
 from flask import Flask, render_template, request, jsonify, send_file, Response
 from PIL import Image
 
@@ -42,34 +43,44 @@ def preview():
 def scan_folder():
     data = request.json
     folder_path = data.get('folder', '').strip()
+    recursive   = data.get('recursive', False)
 
     if not folder_path or not os.path.isdir(folder_path):
         return jsonify({'error': f'Folder not found: {folder_path}'}), 400
 
     images = []
     seen = set()
-    for ext in SUPPORTED_FORMATS:
-        for filepath in (
-            glob.glob(os.path.join(folder_path, f'*{ext}')) +
-            glob.glob(os.path.join(folder_path, f'*{ext.upper()}'))
-        ):
-            if filepath in seen:
-                continue
-            seen.add(filepath)
-            try:
-                with Image.open(filepath) as img:
-                    w, h = img.size
-                    size_kb = round(os.path.getsize(filepath) / 1024)
-                    images.append({
-                        'path': filepath,
-                        'name': os.path.basename(filepath),
-                        'width': w,
-                        'height': h,
-                        'size_kb': size_kb,
-                        'format': img.format or ext[1:].upper()
-                    })
-            except Exception:
-                pass
+
+    def scan_dir(dirpath):
+        for ext in SUPPORTED_FORMATS:
+            for filepath in (
+                glob.glob(os.path.join(dirpath, f'*{ext}')) +
+                glob.glob(os.path.join(dirpath, f'*{ext.upper()}'))
+            ):
+                if filepath in seen:
+                    continue
+                seen.add(filepath)
+                try:
+                    with Image.open(filepath) as img:
+                        w, h = img.size
+                        size_kb = round(os.path.getsize(filepath) / 1024)
+                        images.append({
+                            'path': filepath,
+                            'name': os.path.basename(filepath),
+                            'width': w,
+                            'height': h,
+                            'size_kb': size_kb,
+                            'format': img.format or ext[1:].upper()
+                        })
+                except Exception:
+                    pass
+
+    if recursive:
+        for root, dirs, _ in os.walk(folder_path):
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            scan_dir(root)
+    else:
+        scan_dir(folder_path)
 
     images.sort(key=lambda x: x['name'].lower())
     return jsonify({'images': images, 'folder': folder_path})
@@ -211,6 +222,32 @@ def find_folder():
     return jsonify({'path': ''})
 
 
+@app.route('/download-zip', methods=['POST'])
+def download_zip():
+    """Stream a ZIP of successfully converted files."""
+    data  = request.json
+    paths = data.get('paths', [])
+    valid = [p for p in paths if p and os.path.isfile(p)]
+    if not valid:
+        return Response('No valid files to zip', status=400)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        seen_names = {}
+        for p in valid:
+            name = os.path.basename(p)
+            if name in seen_names:
+                seen_names[name] += 1
+                base, ext = os.path.splitext(name)
+                name = f"{base}_{seen_names[name]}{ext}"
+            else:
+                seen_names[name] = 0
+            zf.write(p, name)
+    buf.seek(0)
+    return send_file(buf, mimetype='application/zip',
+                     as_attachment=True, download_name='optimized-images.zip')
+
+
 @app.route('/convert', methods=['POST'])
 def convert():
     data         = request.json
@@ -223,6 +260,7 @@ def convert():
     for job in jobs:
         filepath      = job['path']
         target_width  = job.get('width')
+        target_height = job.get('height')
         quality       = job.get('quality', 85)
         output_format = job.get('format', 'original').lower()
         skip          = job.get('skip', False)
@@ -242,15 +280,21 @@ def convert():
             continue
 
         try:
+            orig_size_kb = round(os.path.getsize(filepath) / 1024)
             with Image.open(filepath) as img:
                 orig_w, orig_h = img.size
 
-                # Resize
-                if target_width and int(target_width) > 0 and int(target_width) != orig_w:
-                    tw    = int(target_width)
-                    ratio = tw / orig_w
-                    th    = int(orig_h * ratio)
-                    img   = img.resize((tw, th), Image.LANCZOS)
+                # Resize — fit within target_width × target_height (aspect ratio preserved)
+                tw = int(target_width)  if target_width  and int(target_width)  > 0 else None
+                th = int(target_height) if target_height and int(target_height) > 0 else None
+                if tw or th:
+                    ratio_w = tw / orig_w if tw else float('inf')
+                    ratio_h = th / orig_h if th else float('inf')
+                    ratio   = min(ratio_w, ratio_h)
+                    if ratio < 1.0:  # only downscale
+                        new_w = int(orig_w * ratio)
+                        new_h = int(orig_h * ratio)
+                        img   = img.resize((new_w, new_h), Image.LANCZOS)
 
                 # Determine output format & extension
                 base, orig_ext = os.path.splitext(os.path.basename(filepath))
@@ -295,10 +339,11 @@ def convert():
 
                 out_size_kb = round(os.path.getsize(out_path) / 1024)
                 results.append({
-                    'name':     os.path.basename(filepath),
-                    'output':   out_path,
-                    'status':   'ok',
-                    'size_kb':  out_size_kb
+                    'name':             os.path.basename(filepath),
+                    'output':           out_path,
+                    'status':           'ok',
+                    'size_kb':          out_size_kb,
+                    'original_size_kb': orig_size_kb
                 })
 
         except Exception as e:

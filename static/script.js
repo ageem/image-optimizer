@@ -1,12 +1,16 @@
   // ── State ──
-  let images    = [];
-  let overrides = {};  // path → {width,quality,format,skip,no_path}
-  let expanded  = {};  // path → bool
+  let images      = [];
+  let overrides   = {};  // path → {width,quality,format,skip,no_path}
+  let expanded    = {};  // path → bool
+  let converted   = {};  // path → {size_kb} after conversion
+  let activeFilter = 'all';
+  let convertedPaths = [];  // for ZIP download
 
   // ── Elements ──
   const folderPathEl  = document.getElementById('folder-path');
   const loadBtn       = document.getElementById('load-btn');
   const browseBtn     = document.getElementById('browse-btn');
+  const recurseCb     = document.getElementById('recurse-cb');
   const dropZone      = document.getElementById('drop-zone');
   const fileInput     = document.getElementById('file-input');
   const gWidth        = document.getElementById('g-width');
@@ -32,14 +36,32 @@
   const progOverlay   = document.getElementById('prog-overlay');
   const progFill      = document.getElementById('prog-fill');
   const progSub       = document.getElementById('prog-sub');
+  const gHeight       = document.getElementById('g-height');
+  const filterBar     = document.getElementById('filter-bar');
+  const sortSelect    = document.getElementById('sort-select');
+  const bulkRemoveSel = document.getElementById('bulk-remove-select');
+  const themeBtn      = document.getElementById('theme-btn');
+  const zipBtn        = document.getElementById('zip-btn');
+
+  // ── Theme toggle ──
+  const savedTheme = localStorage.getItem('theme') || 'dark';
+  if (savedTheme === 'light') { document.documentElement.setAttribute('data-theme', 'light'); themeBtn.textContent = ''; }
+  themeBtn.addEventListener('click', () => {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    document.documentElement.setAttribute('data-theme', isLight ? 'dark' : 'light');
+    themeBtn.textContent = isLight ? '' : '';
+    localStorage.setItem('theme', isLight ? 'dark' : 'light');
+  });
 
   // ── Slider / input labels ──
   gQuality.addEventListener('input', () => {
     document.getElementById('lbl-quality').textContent = gQuality.value + '%';
+    updateEstimate();
   });
   gWidth.addEventListener('input', () => {
     document.getElementById('lbl-width').textContent = gWidth.value + ' px';
   });
+  gFormat.addEventListener('change', updateEstimate);
 
   // ── Overwrite toggle hides suffix field ──
   gOverwrite.addEventListener('change', () => {
@@ -50,20 +72,37 @@
   // ── Drag & Drop ──
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
   dropZone.addEventListener('dragleave', e => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
-  dropZone.addEventListener('drop', e => {
+  dropZone.addEventListener('drop', async e => {
     e.preventDefault();
     dropZone.classList.remove('drag-over');
     const items = [...(e.dataTransfer.items || [])];
     const files = [...e.dataTransfer.files];
     if (!files.length) { showToast('No files detected. Drag image files from Explorer.', 'err'); return; }
 
-    // Try to get a real filesystem path via webkitGetAsEntry
-    let folderHint = '';
-    if (items.length && items[0].webkitGetAsEntry) {
+    // Detect if a folder was dropped (single item, isDirectory)
+    if (items.length === 1 && items[0].webkitGetAsEntry) {
       const entry = items[0].webkitGetAsEntry();
-      if (entry && entry.fullPath) {
-        // fullPath is a virtual path like /filename.jpg — not a real OS path
-        // We'll rely on the path input field as a hint
+      if (entry && entry.isDirectory) {
+        // Try to resolve the folder path via backend search
+        try {
+          const fRes  = await fetch('/find-folder', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ name: entry.name })
+          });
+          const fData = await fRes.json();
+          if (fData.path) {
+            folderPathEl.value = fData.path;
+            loadFolder(fData.path);
+            return;
+          }
+        } catch(_) {}
+        // Fallback to modal if backend couldn't find it
+        const folder = await showPathModal(
+          `Folder "${entry.name}" dropped.\nEnter the full path so images can be loaded correctly.`,
+          folderPathEl.value || ''
+        );
+        if (folder) { folderPathEl.value = folder; loadFolder(folder); }
+        return;
       }
     }
 
@@ -125,7 +164,7 @@
           showPathPrompt(imgFiles[0].name);
           return;
         } else if (stillNoPaths.length > 0) {
-          showToast(`⚠ ${stillNoPaths.length} file(s) could not be resolved and will error on convert.`, 'err');
+          showToast(` ${stillNoPaths.length} file(s) could not be resolved and will error on convert.`, 'err');
         }
       }
 
@@ -260,7 +299,7 @@
     try {
       const res  = await fetch('/scan-folder', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({folder: path})
+        body: JSON.stringify({folder: path, recursive: recurseCb.checked})
       });
       const data = await res.json();
       if (data.error) { showToast('Error: ' + data.error, 'err'); return; }
@@ -357,18 +396,116 @@
     clearBtn.disabled    = !has;
   }
 
+  // ── Estimated output size ──
+  function updateEstimate() {
+    if (!images.length) return;
+    const q = parseInt(gQuality.value) / 100;
+    const fmt = gFormat.value;
+    const totalKb = images.reduce((sum, img) => sum + img.size_kb, 0);
+    let factor = fmt === 'webp' ? q * 0.65 : fmt === 'png' ? 1.0 : q * 0.9;
+    factor = Math.max(0.05, Math.min(factor, 1.2));
+    const estKb = Math.round(totalKb * factor);
+    const saving = Math.round((1 - factor) * 100);
+    const el = document.getElementById('lbl-estimate');
+    if (el) el.textContent = saving > 0 ? `~${saving}% smaller` : 'similar size';
+  }
+
+  // ── Sort ──
+  sortSelect.addEventListener('change', () => renderGrid());
+
+  // ── Filter chips ──
+  filterBar.addEventListener('click', e => {
+    const chip = e.target.closest('.filter-chip');
+    if (!chip) return;
+    filterBar.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeFilter = chip.dataset.filter;
+    renderGrid();
+  });
+
+  // ── Bulk remove ──
+  bulkRemoveSel.addEventListener('change', function() {
+    const fmt = this.value;
+    if (!fmt) return;
+    const before = images.length;
+    images = images.filter(i => {
+      const f = (i.format || '').toLowerCase();
+      const match = fmt === 'jpg' ? (f === 'jpeg' || f === 'jpg') : f === fmt;
+      if (match) { delete overrides[i.path]; delete expanded[i.path]; }
+      return !match;
+    });
+    this.value = '';
+    renderGrid();
+    updateButtons();
+    showToast(`Removed ${before - images.length} ${fmt.toUpperCase()} file(s)`, 'ok');
+    if (!images.length) topbarStatus.textContent = 'No folder loaded';
+  });
+
+  // ── ZIP download ──
+  zipBtn.addEventListener('click', async () => {
+    if (!convertedPaths.length) return;
+    zipBtn.disabled = true;
+    zipBtn.textContent = '…';
+    try {
+      const res = await fetch('/download-zip', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ paths: convertedPaths })
+      });
+      if (!res.ok) { showToast('ZIP failed: ' + await res.text(), 'err'); return; }
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = 'optimized-images.zip'; a.click();
+      URL.revokeObjectURL(url);
+    } catch(e) {
+      showToast('ZIP failed: ' + e.message, 'err');
+    } finally {
+      zipBtn.disabled = false;
+      zipBtn.textContent = ' Download ZIP';
+    }
+  });
+
   // ── Render ──
+  function getFilteredSorted() {
+    let list = [...images];
+    // Filter
+    if (activeFilter !== 'all') {
+      list = list.filter(img => {
+        const fmt = (img.format || '').toLowerCase();
+        if (activeFilter === 'jpg')         return fmt === 'jpeg' || fmt === 'jpg';
+        if (activeFilter === 'png')         return fmt === 'png';
+        if (activeFilter === 'webp')        return fmt === 'webp';
+        if (activeFilter === 'large')       return img.size_kb >= 1024;
+        if (activeFilter === 'unprocessed') return !converted[img.path];
+        return true;
+      });
+    }
+    // Sort
+    const s = sortSelect.value;
+    list.sort((a, b) => {
+      if (s === 'size')   return b.size_kb - a.size_kb;
+      if (s === 'width')  return b.width - a.width;
+      if (s === 'format') return (a.format||'').localeCompare(b.format||'');
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    });
+    return list;
+  }
+
   function renderGrid() {
     if (!images.length) {
-      imageGrid.style.display = 'none';
+      imageGrid.style.display  = 'none';
       emptyState.style.display = 'flex';
       toolbar.style.display    = 'none';
+      filterBar.style.display  = 'none';
       return;
     }
     emptyState.style.display = 'none';
     imageGrid.style.display  = 'grid';
     toolbar.style.display    = 'flex';
-    imageGrid.innerHTML = images.map(buildCard).join('');
+    filterBar.style.display  = 'flex';
+    updateEstimate();
+    const list = getFilteredSorted();
+    imageGrid.innerHTML = list.map(buildCard).join('');
 
     images.forEach(img => {
       const id   = cardId(img.path);
@@ -469,84 +606,6 @@
     renderGrid();
   }
   window.toggleExpand = toggleExpand;
-
-  function updateToolbar() {
-    const active = images.filter(i => !overrides[i.path]?.skip).length;
-    toolbarCount.textContent = `${active} of ${images.length} images selected for conversion`;
-  }
-
-  // ── Convert ──
-  convertBtn.addEventListener('click', async () => {
-    const jobs = images.map(img => ({
-      path:    img.path,
-      name:    img.name,
-      width:   overrides[img.path].width,
-      quality: overrides[img.path].quality,
-      format:  overrides[img.path].format,
-      skip:    overrides[img.path].skip,
-      no_path: overrides[img.path].no_path || false
-    }));
-
-    const overwriteMode = gOverwrite.checked;
-    const suffix    = overwriteMode ? '' : (gSuffix.value || '-optimized');
-    const outFolder = gOutfolder.value.trim();
-
-    progOverlay.classList.add('active');
-    progFill.style.width = '0%';
-
-    let fakeP = 0;
-    const ticker = setInterval(() => {
-      fakeP = Math.min(fakeP + 2, 88);
-      progFill.style.width = fakeP + '%';
-    }, 80);
-
-    try {
-      const res  = await fetch('/convert', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({jobs, output_suffix: suffix, output_folder: outFolder, overwrite: overwriteMode})
-      });
-      const data = await res.json();
-
-      clearInterval(ticker);
-      progFill.style.width = '100%';
-      await sleep(350);
-      progOverlay.classList.remove('active');
-
-      let ok = 0, skip = 0, err = 0;
-      data.results.forEach(r => {
-        if      (r.status === 'ok')      ok++;
-        else if (r.status === 'skipped') skip++;
-        else                             err++;
-
-        const card = images
-          .map(i => document.getElementById(cardId(i.path)))
-          .find(c => c?.querySelector('.card-name')?.title === r.name);
-        if (!card) return;
-
-        card.classList.remove('is-done','is-error');
-        let badge = card.querySelector('.card-badge');
-        if (!badge) { badge = document.createElement('div'); badge.className = 'card-badge'; card.appendChild(badge); }
-
-        if (r.status === 'ok')      { card.classList.add('is-done');  badge.textContent = `✓ ${r.size_kb}KB`; badge.className = 'card-badge badge-done'; }
-        if (r.status === 'error')   { card.classList.add('is-error'); badge.textContent = 'error';   badge.className = 'card-badge badge-error'; }
-        if (r.status === 'skipped') {                                  badge.textContent = 'skipped'; badge.className = 'card-badge badge-skipped'; }
-      });
-
-      document.getElementById('r-ok').textContent   = ok;
-      document.getElementById('r-skip').textContent = skip;
-      document.getElementById('r-err').textContent  = err;
-      document.getElementById('r-msg').textContent  =
-        overwriteMode ? 'Originals overwritten' :
-        outFolder ? `Saved to ${outFolder}` : 'Saved to source folder';
-      resultsBar.style.display = 'flex';
-
-      showToast(`Done — ${ok} converted, ${skip} skipped, ${err} errors`, ok > 0 ? 'ok' : 'err');
-    } catch(e) {
-      clearInterval(ticker);
-      progOverlay.classList.remove('active');
-      showToast('Conversion failed: ' + e.message, 'err');
-    }
-  });
 
   // ── Toast ──
   let toastTimer;

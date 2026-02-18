@@ -14,6 +14,7 @@
     <div class="topbar-logo">Image<span>/</span>Optimizer</div>
     <div class="topbar-sep"></div>
     <div class="topbar-status" id="topbar-status">No folder loaded</div>
+    <button class="btn btn-ghost btn-sm" id="theme-btn" title="Toggle light/dark mode">☀</button>
   </header>
 
   <!-- Sidebar -->
@@ -33,6 +34,10 @@
         <button class="btn btn-ghost btn-sm" id="browse-btn" title="Browse for folder">&#128193;</button>
         <button class="btn btn-ghost btn-sm" id="load-btn">Load</button>
       </div>
+      <label class="recurse-row">
+        <input type="checkbox" id="recurse-cb" />
+        <span>Include subfolders</span>
+      </label>
     </div>
 
     <div class="sidebar-section">
@@ -42,13 +47,22 @@
         <div class="field-label"><strong>Width</strong><span id="lbl-width">720 px</span></div>
         <div class="input-group">
           <input type="number" id="g-width" value="720" min="1" max="9999" />
-          <span class="input-suffix">px · ratio locked</span>
+          <span class="input-suffix">px</span>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field-label"><strong>Max Height</strong><span style="font-size:10px;color:var(--text3)">(optional)</span></div>
+        <div class="input-group">
+          <input type="number" id="g-height" placeholder="—" min="1" max="9999" />
+          <span class="input-suffix">px · fit-within</span>
         </div>
       </div>
 
       <div class="field-row">
         <div class="field-label"><strong>Quality</strong><span id="lbl-quality">85%</span></div>
         <input type="range" id="g-quality" min="10" max="100" value="85" />
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;text-align:right" id="lbl-estimate"></div>
       </div>
 
       <div class="field-row" style="margin-bottom:0">
@@ -110,6 +124,30 @@
       <button class="btn btn-ghost btn-sm" id="collapse-all-btn">Collapse All</button>
     </div>
 
+    <div class="filter-bar" id="filter-bar" style="display:none">
+      <span class="filter-chip active" data-filter="all">All</span>
+      <span class="filter-chip" data-filter="jpg">JPG</span>
+      <span class="filter-chip" data-filter="png">PNG</span>
+      <span class="filter-chip" data-filter="webp">WebP</span>
+      <span class="filter-chip" data-filter="large">&gt;1 MB</span>
+      <span class="filter-chip" data-filter="unprocessed">Unprocessed</span>
+      <div class="filter-sep"></div>
+      <select class="sort-select" id="sort-select">
+        <option value="name">Sort: Name</option>
+        <option value="size">Sort: Size</option>
+        <option value="width">Sort: Width</option>
+        <option value="format">Sort: Format</option>
+      </select>
+      <div class="filter-sep"></div>
+      <select class="sort-select" id="bulk-remove-select">
+        <option value="">Remove by format…</option>
+        <option value="jpg">Remove all JPG</option>
+        <option value="png">Remove all PNG</option>
+        <option value="webp">Remove all WebP</option>
+        <option value="gif">Remove all GIF</option>
+      </select>
+    </div>
+
     <div class="grid-wrap" id="grid-wrap">
       <div class="empty" id="empty-state">
         <div class="empty-icon">🖼️</div>
@@ -125,6 +163,7 @@
       <div class="rstat rstat-err">✕ <strong id="r-err">0</strong> errors</div>
       <div class="toolbar-sep"></div>
       <span id="r-msg" style="font-size:12px;color:var(--text2)"></span>
+      <button class="btn btn-ghost btn-sm" id="zip-btn" style="display:none">⬇ Download ZIP</button>
     </div>
   </main>
 </div>
