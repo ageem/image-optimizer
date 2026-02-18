@@ -138,12 +138,44 @@
     }
   }
 
-  function showPathPrompt(sampleFilename) {
-    const msg = `Browser security prevents reading file paths from drag-and-drop.\n\nPaste the folder path containing your images into the path field below and click Load.\n\nExample: C:\\Users\\you\\Desktop\\photos`;
-    const folder = prompt(msg, folderPathEl.value || '');
-    if (folder && folder.trim()) {
-      folderPathEl.value = folder.trim();
-      loadFolder(folder.trim());
+  // ── Path Modal ──
+  const pathModalOverlay = document.getElementById('path-modal-overlay');
+  const pathModalSub     = document.getElementById('path-modal-sub');
+  const pathModalInput   = document.getElementById('path-modal-input');
+  const pathModalOk      = document.getElementById('path-modal-ok');
+  const pathModalCancel  = document.getElementById('path-modal-cancel');
+  let _pathModalResolve  = null;
+
+  function showPathModal(subText, prefill = '') {
+    return new Promise(resolve => {
+      _pathModalResolve = resolve;
+      pathModalSub.textContent   = subText;
+      pathModalInput.value       = prefill;
+      pathModalOverlay.classList.add('active');
+      setTimeout(() => pathModalInput.focus(), 50);
+    });
+  }
+
+  function closePathModal(value) {
+    pathModalOverlay.classList.remove('active');
+    if (_pathModalResolve) { _pathModalResolve(value); _pathModalResolve = null; }
+  }
+
+  pathModalOk.addEventListener('click', () => closePathModal(pathModalInput.value.trim()));
+  pathModalCancel.addEventListener('click', () => closePathModal(null));
+  pathModalInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') closePathModal(pathModalInput.value.trim());
+    if (e.key === 'Escape') closePathModal(null);
+  });
+
+  async function showPathPrompt() {
+    const folder = await showPathModal(
+      'Browser security prevents reading file paths from drag-and-drop.\nPaste the full folder path containing your images below.',
+      folderPathEl.value || ''
+    );
+    if (folder) {
+      folderPathEl.value = folder;
+      loadFolder(folder);
     } else {
       showToast('Paste your folder path in the field below and click Load.', 'err');
     }
@@ -173,22 +205,38 @@
       }
 
       // showDirectoryPicker does NOT expose the real OS path.
-      // Ask the user to confirm/enter the full path once — pre-fill with folder name as hint.
+      // Try to find it on the backend first, then fall back to modal.
       const existingPath = folderPathEl.value.trim();
-      let folderPath = existingPath;
-
-      // If the existing path already ends with this folder name, use it directly
       const lastName = existingPath.replace(/\\/g, '/').split('/').pop();
-      if (!existingPath || lastName.toLowerCase() !== dirHandle.name.toLowerCase()) {
-        folderPath = prompt(
-          `Folder selected: "${dirHandle.name}"\n\nEnter the full path to this folder so images can be saved correctly:\n(e.g. C:\\Users\\you\\Desktop\\${dirHandle.name})`,
-          existingPath || `C:\\Users\\${dirHandle.name}`
-        );
-        if (!folderPath || !folderPath.trim()) {
-          showToast('No path entered — cancelled.', 'err');
-          return;
+      let folderPath = '';
+
+      if (existingPath && lastName.toLowerCase() === dirHandle.name.toLowerCase()) {
+        // Existing path already matches — use it directly
+        folderPath = existingPath;
+      } else {
+        // Ask backend to search common dirs for this folder name
+        try {
+          const fRes  = await fetch('/find-folder', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ name: dirHandle.name })
+          });
+          const fData = await fRes.json();
+          if (fData.path) {
+            folderPath = fData.path;
+          }
+        } catch(_) {}
+
+        // If backend couldn't find it, show the styled modal pre-filled with best guess
+        if (!folderPath) {
+          folderPath = await showPathModal(
+            `Folder "${dirHandle.name}" selected.\nEnter the full path so images can be saved correctly.`,
+            existingPath || ''
+          );
+          if (!folderPath) {
+            showToast('No path entered — cancelled.', 'err');
+            return;
+          }
         }
-        folderPath = folderPath.trim();
       }
 
       // Verify the folder exists on the backend, then scan it

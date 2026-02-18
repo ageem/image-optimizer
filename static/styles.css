@@ -288,3 +288,27 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.ok  { border-color: var(--green); }
     .toast.err { border-color: var(--red); }
+
+    /* ── Path Modal ── */
+    .path-modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.7); z-index: 150;
+      align-items: center; justify-content: center;
+    }
+    .path-modal-overlay.active { display: flex; }
+    .path-modal {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 10px; padding: 28px 28px 22px;
+      width: 420px; max-width: calc(100vw - 40px);
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .path-modal-title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .path-modal-sub   { font-size: 12px; color: var(--text2); line-height: 1.5; }
+    .path-modal-input {
+      background: var(--surface3); border: 1px solid var(--border2);
+      border-radius: var(--radius); color: var(--text);
+      font-family: var(--mono); font-size: 12px;
+      padding: 9px 11px; width: 100%;
+    }
+    .path-modal-input:focus { outline: none; border-color: var(--accent); }
+    .path-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }

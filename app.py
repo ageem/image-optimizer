@@ -155,6 +155,62 @@ def resolve_paths():
     return jsonify({'resolved': resolved, 'folder': folder})
 
 
+@app.route('/find-folder', methods=['POST'])
+def find_folder():
+    """
+    Given a folder name, search common user directories for a matching path.
+    Returns the best match found, or an empty string if none found.
+    """
+    data = request.json
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'path': ''})
+
+    search_roots = []
+
+    # Windows common locations
+    for env in ('USERPROFILE', 'HOMEDRIVE', 'PUBLIC'):
+        val = os.environ.get(env, '')
+        if val and os.path.isdir(val):
+            search_roots.append(val)
+    for sub in ('Desktop', 'Documents', 'Downloads', 'Pictures', 'OneDrive', 'Videos'):
+        base = os.environ.get('USERPROFILE', '')
+        if base:
+            p = os.path.join(base, sub)
+            if os.path.isdir(p):
+                search_roots.append(p)
+
+    # macOS / Linux common locations
+    home = os.path.expanduser('~')
+    if home and os.path.isdir(home):
+        search_roots.append(home)
+        for sub in ('Desktop', 'Documents', 'Downloads', 'Pictures'):
+            p = os.path.join(home, sub)
+            if os.path.isdir(p):
+                search_roots.append(p)
+
+    seen = set()
+    for root in search_roots:
+        if root in seen:
+            continue
+        seen.add(root)
+        # Direct child match
+        candidate = os.path.join(root, name)
+        if os.path.isdir(candidate):
+            return jsonify({'path': candidate})
+        # One level deeper
+        try:
+            for entry in os.scandir(root):
+                if entry.is_dir(follow_symlinks=False):
+                    candidate2 = os.path.join(entry.path, name)
+                    if os.path.isdir(candidate2):
+                        return jsonify({'path': candidate2})
+        except PermissionError:
+            pass
+
+    return jsonify({'path': ''})
+
+
 @app.route('/convert', methods=['POST'])
 def convert():
     data         = request.json
